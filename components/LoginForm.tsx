@@ -19,26 +19,38 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
         setError('');
         setIsLoading(true);
 
-        // Simulación de autenticación (puedes reemplazar con llamada a API real)
-        setTimeout(() => {
-            // Credenciales de ejemplo - CAMBIAR EN PRODUCCIÓN
-            if (username === 'admin' && password === 'admin123') {
+        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+        try {
+            const response = await fetch(`${API_URL}/api/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include', // Importante para sesiones
+                body: JSON.stringify({ username, password })
+            });
+
+            const data = await response.json();
+
+            if (data.ok && data.usuario) {
+                // Guardar usuario en localStorage
+                localStorage.setItem('user', JSON.stringify(data.usuario));
+
                 onLogin({
-                    name: 'Administrador',
-                    role: 'admin',
-                    email: 'admin@brass.cl'
-                });
-            } else if (username === 'usuario' && password === 'usuario123') {
-                onLogin({
-                    name: 'Usuario',
-                    role: 'user',
-                    email: 'usuario@brass.cl'
+                    name: data.usuario.nombreCompleto || data.usuario.username,
+                    role: data.usuario.rol === 'admin' ? 'admin' : 'user',
+                    email: data.usuario.email || ''
                 });
             } else {
-                setError('Usuario o contraseña incorrectos');
+                setError(data.error || 'Error al iniciar sesión');
                 setIsLoading(false);
             }
-        }, 800);
+        } catch (err) {
+            console.error('Error en login:', err);
+            setError('Error de conexión con el servidor');
+            setIsLoading(false);
+        }
     };
 
     return (

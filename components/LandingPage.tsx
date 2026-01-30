@@ -4,12 +4,13 @@ import {
   LogOut, Layers, BarChart2,
   Archive, Upload,
   Loader2,
-  GitCompare, Database, ChevronDown, ChevronUp
+  GitCompare, Database, ChevronDown, ChevronUp, Users
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { User, ReologyData, ElementoType, MaterialType, SitioType } from '../types';
 import { MOCK_DATA } from '../data/mockData';
 import { GoogleGenAI } from "@google/genai";
+import AdminPanel from './AdminPanel';
 
 /** ─────────────────────────────────────────────────────────────
  *  Logo: export nombrado para usarlo también en Dashboard
@@ -17,22 +18,14 @@ import { GoogleGenAI } from "@google/genai";
 export const BrassLogo: React.FC<{ light?: boolean; width?: number; height?: number }> = ({
   light = false,
   width = 120,
-  height = 28,
+  height = 48,
 }) => {
   return (
-    <svg
-      aria-label="Brass logo"
-      role="img"
-      width={width}
-      height={height}
-      viewBox="0 0 120 28"
-    >
-      {/* Reemplaza por tu SVG real si lo tienes */}
-      <rect width="120" height="28" rx="6" fill={light ? '#ffffff' : '#111111'} />
-      <text x="12" y="19" fontFamily="system-ui, sans-serif" fontSize="12" fill={light ? '#111' : '#fff'}>
-        BRASS
-      </text>
-    </svg>
+    <img
+      src="https://brassengineering.com/wp-content/uploads/2025/06/Brass_Logo-Opcion-03-Rojo-2025.png"
+      alt="BRASS Engineering Logo"
+      style={{ height: height, width: 'auto' }}
+    />
   );
 };
 
@@ -64,6 +57,7 @@ export const LandingPage: React.FC<LandingProps> = ({ user, onLogout }) => {
   // Estado para subida de Excel
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
   const [hojasExcel, setHojasExcel] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -86,6 +80,9 @@ export const LandingPage: React.FC<LandingProps> = ({ user, onLogout }) => {
   const [campaignsCollapsed, setCampaignsCollapsed] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState<any | null>(null);
   const [campaignMeasurements, setCampaignMeasurements] = useState<any[]>([]);
+
+  // Estado para AdminPanel
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   // Cargar campañas al montar
   useEffect(() => {
@@ -152,18 +149,20 @@ export const LandingPage: React.FC<LandingProps> = ({ user, onLogout }) => {
       });
       const data = await res.json();
       if (data.ok) {
-        setUploadMsg('Archivo subido y datos guardados correctamente.');
-        setHojasExcel(data.hojas); // Guardar todas las hojas recibidas
+        const numCampanas = data.totalCampanas || data.campanasCreadas?.length || 1;
+        setUploadMsg(`✓ Archivo procesado: ${numCampanas} campaña(s) creada(s) exitosamente.`);
+
+        // Recargar la lista de campañas
+        await loadCampaigns();
+
+        // Mantener compatibilidad con código legacy
+        setHojasExcel(data.hojas || []);
 
         if (data.valoresCeldasPorHoja) {
-          // Guardamos para recalcular vistas con distintos modos/celdas
           setValoresCeldasPorHoja(data.valoresCeldasPorHoja);
-
-          // Series = nombres de hoja (normalmente, nombres de proyecto)
           const seriesNames: string[] = Object.keys(data.valoresCeldasPorHoja);
           setExcelSeries(seriesNames);
 
-          // ---- Vista "Reograma": filas = celda (B7, T7, etc.), columnas = hoja (proyecto)
           const chartData = CELL_KEYS.map(celda => {
             const punto: any = { celda };
             seriesNames.forEach(hoja => {
@@ -180,7 +179,8 @@ export const LandingPage: React.FC<LandingProps> = ({ user, onLogout }) => {
         setUploadMsg('Error al guardar los datos.');
       }
     } catch (err) {
-      setUploadMsg('Error al conectar con el servidor.');
+      setUploadMsg('✗ Error al conectar con el servidor.');
+      setUploadSuccess(false);
     }
     setUploading(false);
   };
@@ -252,10 +252,20 @@ export const LandingPage: React.FC<LandingProps> = ({ user, onLogout }) => {
         <div className="d-flex align-items-center gap-3">
           <div className="text-end d-none d-sm-block">
             <div className="fw-bold small">{safeUser.name}</div>
-            <div className="text-muted" style={{ fontSize: '10px' }}>
-              {safeUser.role?.toUpperCase?.() ?? 'INVITADO'}
-            </div>
+            <div className="text-muted x-small">{safeUser.role === 'admin' ? 'Administrador' : 'Usuario'}</div>
           </div>
+          {/* Botón Admin (solo para administradores) */}
+          {safeUser.role === 'admin' && (
+            <button
+              onClick={() => setShowAdminPanel(true)}
+              className="btn btn-sm text-white fw-bold"
+              style={{ backgroundColor: BRASS_RED }}
+              title="Administrar Usuarios"
+            >
+              <Users size={18} className="me-1" />
+              Admin
+            </button>
+          )}
           <button
             onClick={() => onLogout?.()}
             className="btn btn-sm border-2 fw-bold px-3"
@@ -652,6 +662,13 @@ export const LandingPage: React.FC<LandingProps> = ({ user, onLogout }) => {
         </div>
       </footer>
 
+      {/* AdminPanel Modal */}
+      {
+        showAdminPanel && (
+          <AdminPanel onClose={() => setShowAdminPanel(false)} />
+        )
+      }
+
       <style>{`
         .x-small { font-size: 10px; }
         .fw-black { font-weight: 800; }
@@ -659,7 +676,7 @@ export const LandingPage: React.FC<LandingProps> = ({ user, onLogout }) => {
         .animate-spin { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
-    </div>
+    </div >
   );
 };
 
