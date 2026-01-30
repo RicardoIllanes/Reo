@@ -11,6 +11,7 @@ import { User, ReologyData, ElementoType, MaterialType, SitioType } from '../typ
 import { MOCK_DATA } from '../data/mockData';
 import { GoogleGenAI } from "@google/genai";
 import AdminPanel from './AdminPanel';
+import FileUploadView from './FileUploadView';
 
 /** ─────────────────────────────────────────────────────────────
  *  Logo: export nombrado para usarlo también en Dashboard
@@ -83,6 +84,9 @@ export const LandingPage: React.FC<LandingProps> = ({ user, onLogout }) => {
 
   // Estado para AdminPanel
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+
+  // Estado para FileUploadView
+  const [showFileUpload, setShowFileUpload] = useState(false);
 
   // Cargar campañas al montar
   useEffect(() => {
@@ -177,6 +181,64 @@ export const LandingPage: React.FC<LandingProps> = ({ user, onLogout }) => {
         loadCampaigns();
       } else {
         setUploadMsg('Error al guardar los datos.');
+      }
+    } catch (err) {
+      setUploadMsg('✗ Error al conectar con el servidor.');
+      setUploadSuccess(false);
+    }
+    setUploading(false);
+  };
+
+  // Nueva función para manejar subida desde FileUploadView
+  const handleFileUpload = async (file: File) => {
+    setShowFileUpload(false);
+    setUploadMsg(null);
+    setUploading(true);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+    try {
+      const res = await fetch(`${API_URL}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.ok) {
+        const numCampanas = data.totalCampanas || data.campanasCreadas?.length || 1;
+        setUploadMsg(`✓ Archivo procesado: ${numCampanas} campaña(s) creada(s) exitosamente.`);
+        setUploadSuccess(true);
+
+        // Auto-dismiss después de 5 segundos
+        setTimeout(() => {
+          setUploadMsg(null);
+          setUploadSuccess(false);
+        }, 5000);
+
+        await loadCampaigns();
+        setHojasExcel(data.hojas || []);
+
+        if (data.valoresCeldasPorHoja) {
+          setValoresCeldasPorHoja(data.valoresCeldasPorHoja);
+          const seriesNames: string[] = Object.keys(data.valoresCeldasPorHoja);
+          setExcelSeries(seriesNames);
+
+          const chartData = CELL_KEYS.map(celda => {
+            const punto: any = { celda };
+            seriesNames.forEach(hoja => {
+              punto[hoja] = data.valoresCeldasPorHoja[hoja][celda] ?? null;
+            });
+            return punto;
+          });
+          setExcelChartData(chartData);
+        }
+
+        loadCampaigns();
+      } else {
+        setUploadMsg('✗ Error al guardar los datos.');
+        setUploadSuccess(false);
       }
     } catch (err) {
       setUploadMsg('✗ Error al conectar con el servidor.');
@@ -663,11 +725,19 @@ export const LandingPage: React.FC<LandingProps> = ({ user, onLogout }) => {
       </footer>
 
       {/* AdminPanel Modal */}
-      {
-        showAdminPanel && (
-          <AdminPanel onClose={() => setShowAdminPanel(false)} />
-        )
-      }
+      {showAdminPanel && (
+        <AdminPanel onClose={() => setShowAdminPanel(false)} />
+      )}
+
+      {/* FileUploadView Modal */}
+      {showFileUpload && (
+        <FileUploadView
+          onFileSelect={handleFileUpload}
+          onCancel={() => setShowFileUpload(false)}
+          acceptedFormats={['.xlsx', '.xls']}
+          maxSizeMB={10}
+        />
+      )}
 
       <style>{`
         .x-small { font-size: 10px; }
@@ -676,7 +746,7 @@ export const LandingPage: React.FC<LandingProps> = ({ user, onLogout }) => {
         .animate-spin { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
-    </div >
+    </div>
   );
 };
 
